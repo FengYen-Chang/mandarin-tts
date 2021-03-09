@@ -50,11 +50,24 @@ def get_FastSpeech2(model_path,with_hanzi=True):
 def synthesize(model, waveglow, py_text_seq,  cn_text_seq, duration_control=1.0,prefix=''):
     #sentence = sentence[:200]  # long filename will result in OS Error
 
+    # make all input lenght is 10 to get the static onnx graph for convert the model to OpenVINO 
+    py_text_fill_seq = torch.zeros((1, 10), dtype=torch.int64).to(device)
+    cn_text_fill_seq = torch.zeros((1, 10), dtype=torch.int64).to(device)
+
+    _, l = py_text_seq.shape
+    py_text_fill_seq[:, :l] = py_text_seq
+    py_text_fill_seq[:, l:] = py_text_seq[:, 0]
+
+    cn_text_fill_seq[:, :l] = cn_text_seq
+    cn_text_fill_seq[:, l:] = cn_text_seq[:, 0]
+
+    py_text_seq = py_text_fill_seq
+    cn_text_seq = cn_text_fill_seq
+
     src_len = torch.from_numpy(np.array([py_text_seq.shape[1]])).to(device)
     
     mel, mel_postnet, log_duration_output, _, _, mel_len = model(
-        py_text_seq, src_len, hz_seq=cn_text_seq,d_control=duration_control)
-   # print(log_duration_output)
+        py_text_seq, src_len, real_len=torch.tensor([l], dtype=torch.int64).to(device), hz_seq=cn_text_seq,d_control=duration_control)
     mel_torch = mel.transpose(1, 2).detach()
     mel_postnet_torch = mel_postnet.transpose(1, 2).detach()
     mel = mel[0].cpu().transpose(0, 1).detach()
