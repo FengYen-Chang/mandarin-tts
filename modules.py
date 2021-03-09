@@ -40,16 +40,14 @@ class VarianceAdaptor(nn.Module):
         if duration_target is not None:
             duration_rounded = torch.clamp(
                 torch.round((duration_target+hp.duration_mean)*d_control), min=0)
-            
-            x, mel_len = self.length_regulator(x, duration_rounded, max_len)
+
+            x, mel_len, ori_len = self.length_regulator(x, duration_rounded, max_len)
         else:
            # duration_rounded = torch.clamp(
              #   (torch.round(torch.exp(log_duration_prediction)-hp.log_offset)*d_control), min=0)
             duration_rounded = torch.clamp(
                 torch.round((log_duration_prediction.detach()+hp.duration_mean)*d_control),min=0)
-           # print('duration',duration_rounded)
-                
-            x, mel_len = self.length_regulator(x, duration_rounded, max_len)
+            x, mel_len, ori_len = self.length_regulator(x, duration_rounded, max_len)
             mel_mask = utils.get_mask_from_lengths(mel_len)
 #         tf = float(torch.rand(1))>0.8
 #         pitch_prediction = self.pitch_predictor(x, mel_mask)
@@ -72,7 +70,7 @@ class VarianceAdaptor(nn.Module):
 
         #x = x + pitch_embedding + energy_embedding
 
-        return x, log_duration_prediction,  mel_len, mel_mask
+        return x, log_duration_prediction,  mel_len, mel_mask, ori_len
 
 
 class LengthRegulator(nn.Module):
@@ -85,7 +83,7 @@ class LengthRegulator(nn.Module):
         output = list()
         mel_len = list()
         for batch, expand_target in zip(x, duration):
-            expanded = self.expand(batch, expand_target)
+            expanded, ori_len = self.expand(batch, expand_target)
             output.append(expanded)
             mel_len.append(expanded.shape[0])
 
@@ -94,7 +92,7 @@ class LengthRegulator(nn.Module):
         else:
             output = utils.pad(output)
 
-        return output, torch.LongTensor(mel_len).to(device)
+        return output, torch.LongTensor(mel_len).to(device), ori_len
 
     def expand(self, batch, predicted):
         out = list()
@@ -103,12 +101,14 @@ class LengthRegulator(nn.Module):
             expand_size = predicted[i].item()
             out.append(vec.expand(int(expand_size), -1))
         out = torch.cat(out, 0)
+        ori_len = out.shape[0]
+        out = torch.cat([out, torch.zeros(200 - out.shape[0], out.shape[1]).to(device)], 0)
 
-        return out
+        return out, ori_len
 
     def forward(self, x, duration, max_len):
-        output, mel_len = self.LR(x, duration, max_len)
-        return output, mel_len
+        output, mel_len, ori_len = self.LR(x, duration, max_len)
+        return output, mel_len, ori_len
 
 
 class VariancePredictor(nn.Module):

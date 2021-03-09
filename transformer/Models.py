@@ -68,7 +68,7 @@ class Encoder(nn.Module):
         self.layer_stack = nn.ModuleList([FFTBlock(
             d_model, d_inner, n_head, d_k, d_v, dropout=dropout) for _ in range(n_layers)])
 
-    def forward(self, src_seq, mask,hz_seq = None, return_attns=False):
+    def forward(self, src_seq, mask,hz_seq, return_attns=False):
 
         enc_slf_attn_list = []
         batch_size, max_len = src_seq.shape[0], src_seq.shape[1]

@@ -12,6 +12,10 @@ from ipdb import set_trace
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 
+# OpenVINO
+from openvino.inference_engine import IECore
+import numpy as np
+
 class FastSpeech2(nn.Module):
     """ FastSpeech2 """
 
@@ -28,20 +32,49 @@ class FastSpeech2(nn.Module):
         if self.use_postnet:
             self.postnet = UNet(scale=8)
 
-    def forward(self, src_seq, src_len, hz_seq = None,mel_len=None, d_target=None,  max_src_len=None, max_mel_len=None, d_control=1.0, p_control=1.0, e_control=1.0):
+    def forward(self, src_seq, src_len, real_len=None, hz_seq = None,mel_len=None, d_target=None,  max_src_len=None, max_mel_len=None, d_control=1.0, p_control=1.0, e_control=1.0):
         src_mask = get_mask_from_lengths(src_len, max_src_len)
         mel_mask = get_mask_from_lengths(
             mel_len, max_mel_len) if mel_len is not None else None
 
-        encoder_output = self.encoder(src_seq, src_mask,hz_seq=hz_seq)
+        encoder_output = self.encoder(src_seq, src_mask, hz_seq)
+
+        # Export the encoder graph to onnx model
+
+        opset_version = 11
+        encoder_input = (src_seq, src_mask,hz_seq)
+        torch.onnx.export(self.encoder, encoder_input, "./onnx/encoder.onnx",
+            opset_version=opset_version,
+            do_constant_folding=True,
+            input_names=["src_seq", "src_mask", "hz_seq"],
+            output_names=["encoder_output"])
+
+        # real length of input to get compute the correct data
+
+        if real_len:
+            encoder_output = encoder_output[:, :real_len, :]
+            src_mask = get_mask_from_lengths(real_len, max_src_len)
+
         if d_target is not None:
-            variance_adaptor_output, d_prediction,   _, _ = self.variance_adaptor(
+            variance_adaptor_output, d_prediction,   _, _, ori_len = self.variance_adaptor(
                 encoder_output, src_mask, mel_mask, d_target,   max_mel_len, d_control, p_control, e_control)
         else:
-            variance_adaptor_output, d_prediction,   mel_len, mel_mask = self.variance_adaptor(
+            variance_adaptor_output, d_prediction,   mel_len, mel_mask, ori_len = self.variance_adaptor(
                 encoder_output, src_mask, mel_mask, d_target,   max_mel_len, d_control, p_control, e_control)
 
         decoder_output = self.decoder(variance_adaptor_output, mel_mask)
+
+        # Export the decoder graph to onnx model
+
+        opset_version = 11
+        decoder_input = (variance_adaptor_output, mel_mask)
+        torch.onnx.export(self.decoder, decoder_input, "./onnx/decoder.onnx",
+            opset_version=opset_version,
+            do_constant_folding=True,
+            input_names=["variance_adaptor_output", "mel_mask"],
+            output_names=["decoder_output"])
+        decoder_output = decoder_output[:, :ori_len, :]
+
         mel_output = self.mel_linear(decoder_output)
         if self.use_postnet:
             unet_out = self.postnet(torch.unsqueeze(mel_output,1))
