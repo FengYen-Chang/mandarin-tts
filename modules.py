@@ -34,9 +34,24 @@ class VarianceAdaptor(nn.Module):
 #         self.pitch_embedding = nn.Embedding(hp.n_bins, hp.encoder_hidden)
 #         self.energy_embedding = nn.Embedding(hp.n_bins, hp.encoder_hidden)
 
-    def forward(self, x, src_mask, mel_mask=None, duration_target=None, max_len=None, d_control=1.0, p_control=1.0, e_control=1.0):
+    def forward(self, x, src_mask, mel_mask=None, duration_target=None, max_len=None, d_control=1.0, p_control=1.0, e_control=1.0, real_len=None):
 
         log_duration_prediction = self.duration_predictor(x, src_mask)
+
+        opset_version = 11
+        duration_predictor_input = (x, src_mask)
+        torch.onnx.export(self.duration_predictor, duration_predictor_input, "./onnx/duration_predictor.onnx",
+            opset_version=opset_version,
+            do_constant_folding=True,
+            input_names=["encoder_output", "src_mask"],
+            output_names=["duration_predictor_output"])
+
+        # real length of input to get compute the correct data
+
+        if real_len:
+            log_duration_prediction = log_duration_prediction[:, :real_len]
+            x = x[:, :real_len, :]
+
         if duration_target is not None:
             duration_rounded = torch.clamp(
                 torch.round((duration_target+hp.duration_mean)*d_control), min=0)

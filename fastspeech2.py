@@ -49,18 +49,12 @@ class FastSpeech2(nn.Module):
             input_names=["src_seq", "src_mask", "hz_seq"],
             output_names=["encoder_output"])
 
-        # real length of input to get compute the correct data
-
-        if real_len:
-            encoder_output = encoder_output[:, :real_len, :]
-            src_mask = get_mask_from_lengths(real_len, max_src_len)
-
         if d_target is not None:
             variance_adaptor_output, d_prediction,   _, _, ori_len = self.variance_adaptor(
-                encoder_output, src_mask, mel_mask, d_target,   max_mel_len, d_control, p_control, e_control)
+                encoder_output, src_mask, mel_mask, d_target,   max_mel_len, d_control, p_control, e_controli, real_len=real_len)
         else:
             variance_adaptor_output, d_prediction,   mel_len, mel_mask, ori_len = self.variance_adaptor(
-                encoder_output, src_mask, mel_mask, d_target,   max_mel_len, d_control, p_control, e_control)
+                encoder_output, src_mask, mel_mask, d_target,   max_mel_len, d_control, p_control, e_control, real_len=real_len)
 
         decoder_output = self.decoder(variance_adaptor_output, mel_mask)
 
