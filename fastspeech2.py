@@ -70,6 +70,15 @@ class FastSpeech2(nn.Module):
         decoder_output = decoder_output[:, :ori_len, :]
 
         mel_output = self.mel_linear(decoder_output)
+
+        opset_version = 11
+        mel_input = (decoder_output)
+        torch.onnx.export(self.mel_linear, mel_input, "./onnx/mel.onnx",
+            opset_version=opset_version,
+            do_constant_folding=True,
+            input_names=["decoder_output"],
+            output_names=["mel_output"])
+
         if self.use_postnet:
             unet_out = self.postnet(torch.unsqueeze(mel_output,1))
             mel_output_postnet = unet_out[:,0,:,:]+ mel_output
